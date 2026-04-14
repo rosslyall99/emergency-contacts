@@ -10,652 +10,1090 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const TABLE_NAME = 'emergencyContacts';
 
-const cardStyle = {
-  background: '#aa3bff2c',
-  border: '1px solid #000000',
-  borderRadius: '8px',
-  padding: '16px',
+const EMPTY_FORM = {
+  title: '',
+  first_name: '',
+  surname: '',
+  couple_name: '',
+  care_of: '',
+  address_1: '',
+  address_2: '',
+  address_3: '',
+  town_city: '',
+  postcode: '',
+  telephone: '',
+  email: '',
+  mem_code: '',
+  mem_type: '',
+  householder: false,
+  joined_date: '',
+  death_date: '',
+  left_congregation_date: '',
+  office_bearer: '',
+  ordained_date: '',
+  admitted_date: '',
+  active: true,
+  fwo: false,
+  fwo_no: '',
+  consent_given: false,
+  emergency_contact_label_1: '',
+  emergency_contact_detail_1: '',
+  emergency_contact_label_2: '',
+  emergency_contact_detail_2: '',
+  notes: '',
 };
 
-const inputStyle = {
-  width: '100%',
-  padding: '10px 12px',
-  border: '1px solid #000000',
-  borderRadius: '8px',
-  fontSize: '14px',
-  color: '#000000',
-  background: '#ffffff',
-  outline: 'none',
-  boxSizing: 'border-box',
-};
+const MEM_CODE_OPTIONS = ['', 'F', 'D', 'A', 'T', 'O', 'M'];
 
-const buttonStyle = {
-  padding: '8px 14px',
-  border: '1px solid #000000',
-  borderRadius: '8px',
-  background: '#aa3bff',
-  color: '#fff',
-  fontSize: '14px',
-  cursor: 'pointer',
-};
-
-const disabledButtonStyle = {
-  ...buttonStyle,
-  opacity: 0.45,
-  cursor: 'not-allowed',
-};
-
-function safe(value) {
-  return value ?? '';
-}
-
-function displayValue(value) {
-  return value === null || value === undefined || value === '' ? '' : String(value);
-}
-
-function addressLine(record) {
-  return [record?.Address1, record?.Address2, record?.Address3, record?.Town, record?.Postcode]
-    .filter(Boolean)
-    .join(', ');
-}
-
-function makeEditableRecord(record) {
-  if (!record) return null;
-  return {
-    id: safe(record.id),
-    ChrName: safe(record.ChrName),
-    Surname: safe(record.Surname),
-    Address1: safe(record.Address1),
-    Address2: safe(record.Address2),
-    Address3: safe(record.Address3),
-    Town: safe(record.Town),
-    Postcode: safe(record.Postcode),
-    'Tel No': safe(record['Tel No']),
-    'Email Address': safe(record['Email Address']),
-    'Emergency Contact Info 1': safe(record['Emergency Contact Info 1']),
-    'Emergency Contact Detail 1': safe(record['Emergency Contact Detail 1']),
-    'Emergency Contact Info 2': safe(record['Emergency Contact Info 2']),
-    'Emergency Contact Detail 2': safe(record['Emergency Contact Detail 2']),
-  };
-}
-
-function makeBlankRecord() {
-  return {
-    id: '',
-    ChrName: '',
-    Surname: '',
-    Address1: '',
-    Address2: '',
-    Address3: '',
-    Town: '',
-    Postcode: '',
-    'Tel No': '',
-    'Email Address': '',
-    'Emergency Contact Info 1': '',
-    'Emergency Contact Detail 1': '',
-    'Emergency Contact Info 2': '',
-    'Emergency Contact Detail 2': '',
-  };
-}
-
-const selectColumns = `
-  id,
-  "ChrName",
-  "Surname",
-  "Address1",
-  "Address2",
-  "Address3",
-  "Town",
-  "Postcode",
-  "Tel No",
-  "Email Address",
-  "Emergency Contact Info 1",
-  "Emergency Contact Detail 1",
-  "Emergency Contact Info 2",
-  "Emergency Contact Detail 2"
-`;
-
-export default function EmergencyContactsPage() {
-  const [query, setQuery] = useState('');
+function App() {
+  const [search, setSearch] = useState('');
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [searchAttempted, setSearchAttempted] = useState(false);
-  const [results, setResults] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [editable, setEditable] = useState(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [isAddingNew, setIsAddingNew] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState('');
-  const [saveMessage, setSaveMessage] = useState('');
+  const [searchError, setSearchError] = useState('');
 
-  const trimmedQuery = useMemo(() => query.trim(), [query]);
+  const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  const [messageModal, setMessageModal] = useState({
+    open: false,
+    title: '',
+    message: '',
+  });
+
+  const [confirmModal, setConfirmModal] = useState({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+    confirmText: 'Confirm',
+    danger: false,
+  });
+
+  const trimmedSearch = search.trim();
 
   useEffect(() => {
-    if (isAddingNew) {
-      setEditable(makeBlankRecord());
-      setIsEditing(true);
-      return;
-    }
+    const runSearch = async () => {
+      if (!trimmedSearch) {
+        setRows([]);
+        setSearchError('');
+        setLoading(false);
+        return;
+      }
 
-    if (!selected) {
-      setEditable(null);
-      setIsEditing(false);
-      return;
-    }
+      setLoading(true);
+      setSearchError('');
 
-    setEditable(makeEditableRecord(selected));
-    setIsEditing(false);
-  }, [selected, isAddingNew]);
+      try {
+        const like = `%${trimmedSearch}%`;
 
-  const resetSearchState = () => {
-    setQuery('');
-    setSearchAttempted(false);
-    setResults([]);
-    setSelected(null);
-    setEditable(null);
-    setIsEditing(false);
-    setIsAddingNew(false);
-    setError('');
-    setSaveMessage('');
-    setLoading(false);
-  };
+        const { data, error } = await supabase
+          .from('people_list_view')
+          .select(
+            `
+            id,
+            title,
+            first_name,
+            surname,
+            full_name,
+            couple_name,
+            address_1,
+            address_2,
+            address_3,
+            town_city,
+            postcode,
+            telephone,
+            email,
+            mem_code,
+            active,
+            fwo,
+            fwo_no,
+            fellowship_teams,
+            elder_names,
+            magazine_groups,
+            deliverer_names
+          `
+          )
+          .or(
+            [
+              `first_name.ilike.${like}`,
+              `surname.ilike.${like}`,
+              `full_name.ilike.${like}`,
+            ].join(',')
+          )
+          .order('surname', { ascending: true })
+          .order('first_name', { ascending: true })
+          .limit(200);
 
-  const runSearch = async (searchText) => {
-    if (isAddingNew) return;
+        if (error) {
+          throw error;
+        }
 
-    const value = (searchText ?? '').trim();
-
-    if (value.length === 0) {
-      setSearchAttempted(false);
-      setResults([]);
-      setSelected(null);
-      setEditable(null);
-      setIsEditing(false);
-      setError('');
-      setSaveMessage('');
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setSearchAttempted(true);
-    setSelected(null);
-    setEditable(null);
-    setIsEditing(false);
-    setSaveMessage('');
-    setError('');
-
-    const { data, error: searchError } = await supabase
-      .from(TABLE_NAME)
-      .select(selectColumns)
-      .or(`"ChrName".ilike.%${value}%,"Surname".ilike.%${value}%`)
-      .order('Surname', { ascending: true })
-      .order('ChrName', { ascending: true })
-      .limit(50);
-
-    if (searchError) {
-      setResults([]);
-      setError(searchError.message || 'Search failed.');
-      setLoading(false);
-      return;
-    }
-
-    setResults(data || []);
-    setLoading(false);
-  };
-
-  const handleFieldChange = (field, value) => {
-    setEditable((current) => ({ ...current, [field]: value }));
-  };
-
-  const startAddNew = () => {
-    setIsAddingNew(true);
-    setSelected(null);
-    setEditable(makeBlankRecord());
-    setIsEditing(true);
-    setSaveMessage('');
-    setError('');
-  };
-
-  const cancelEdit = () => {
-    if (isAddingNew) {
-      resetSearchState();
-      return;
-    }
-
-    setEditable(makeEditableRecord(selected));
-    setIsEditing(false);
-    setSaveMessage('');
-    setError('');
-  };
-
-  const createRecord = async () => {
-    if (!editable) return;
-
-    setSaving(true);
-    setError('');
-    setSaveMessage('');
-
-    const payload = {
-      ChrName: editable.ChrName,
-      Surname: editable.Surname,
-      Address1: editable.Address1,
-      Address2: editable.Address2,
-      Address3: editable.Address3,
-      Town: editable.Town,
-      Postcode: editable.Postcode,
-      'Tel No': editable['Tel No'],
-      'Email Address': editable['Email Address'],
-      'Emergency Contact Info 1': editable['Emergency Contact Info 1'],
-      'Emergency Contact Detail 1': editable['Emergency Contact Detail 1'],
-      'Emergency Contact Info 2': editable['Emergency Contact Info 2'],
-      'Emergency Contact Detail 2': editable['Emergency Contact Detail 2'],
+        setRows(data ?? []);
+      } catch (err) {
+        setRows([]);
+        setSearchError(err.message || 'Search failed.');
+      } finally {
+        setLoading(false);
+      }
     };
 
-    const { error: insertError } = await supabase
-      .from(TABLE_NAME)
-      .insert(payload);
+    runSearch();
+  }, [trimmedSearch]);
 
-    if (insertError) {
-      setError(insertError.message || 'Create failed.');
-      setSaving(false);
-      return;
-    }
+  const titleText = useMemo(() => {
+    if (editingId) return 'Edit person';
+    return 'Add person';
+  }, [editingId]);
 
-    alert('Record created successfully.');
+  function openMessage(title, message) {
+    setMessageModal({ open: true, title, message });
+  }
+
+  function closeMessage() {
+    setMessageModal({ open: false, title: '', message: '' });
+  }
+
+  function openConfirm({ title, message, onConfirm, confirmText = 'Confirm', danger = false }) {
+    setConfirmModal({
+      open: true,
+      title,
+      message,
+      onConfirm,
+      confirmText,
+      danger,
+    });
+  }
+
+  function closeConfirm() {
+    setConfirmModal({
+      open: false,
+      title: '',
+      message: '',
+      onConfirm: null,
+      confirmText: 'Confirm',
+      danger: false,
+    });
+  }
+
+  function resetSearchAndResults() {
+    setSearch('');
+    setRows([]);
+    setSearchError('');
+  }
+
+  function openCreateForm() {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setFormOpen(true);
+  }
+
+  async function openEditForm(row) {
     setSaving(false);
-    resetSearchState();
-  };
 
-  const updateRecord = async () => {
-    if (!editable) return;
+    try {
+      const { data, error } = await supabase
+        .from('people')
+        .select('*')
+        .eq('id', row.id)
+        .single();
 
-    setSaving(true);
-    setError('');
-    setSaveMessage('');
+      if (error) throw error;
 
-    const payload = {
-      ChrName: editable.ChrName,
-      Surname: editable.Surname,
-      Address1: editable.Address1,
-      Address2: editable.Address2,
-      Address3: editable.Address3,
-      Town: editable.Town,
-      Postcode: editable.Postcode,
-      'Tel No': editable['Tel No'],
-      'Email Address': editable['Email Address'],
-      'Emergency Contact Info 1': editable['Emergency Contact Info 1'],
-      'Emergency Contact Detail 1': editable['Emergency Contact Detail 1'],
-      'Emergency Contact Info 2': editable['Emergency Contact Info 2'],
-      'Emergency Contact Detail 2': editable['Emergency Contact Detail 2'],
+      setEditingId(data.id);
+      setForm({
+        title: data.title ?? '',
+        first_name: data.first_name ?? '',
+        surname: data.surname ?? '',
+        couple_name: data.couple_name ?? '',
+        care_of: data.care_of ?? '',
+        address_1: data.address_1 ?? '',
+        address_2: data.address_2 ?? '',
+        address_3: data.address_3 ?? '',
+        town_city: data.town_city ?? '',
+        postcode: data.postcode ?? '',
+        telephone: data.telephone ?? '',
+        email: data.email ?? '',
+        mem_code: data.mem_code ?? '',
+        mem_type: data.mem_type ?? '',
+        householder: Boolean(data.householder),
+        joined_date: data.joined_date ?? '',
+        death_date: data.death_date ?? '',
+        left_congregation_date: data.left_congregation_date ?? '',
+        office_bearer: data.office_bearer ?? '',
+        ordained_date: data.ordained_date ?? '',
+        admitted_date: data.admitted_date ?? '',
+        active: Boolean(data.active),
+        fwo: Boolean(data.fwo),
+        fwo_no: data.fwo_no ?? '',
+        consent_given: Boolean(data.consent_given),
+        emergency_contact_label_1: data.emergency_contact_label_1 ?? '',
+        emergency_contact_detail_1: data.emergency_contact_detail_1 ?? '',
+        emergency_contact_label_2: data.emergency_contact_label_2 ?? '',
+        emergency_contact_detail_2: data.emergency_contact_detail_2 ?? '',
+        notes: data.notes ?? '',
+      });
+      setFormOpen(true);
+    } catch (err) {
+      openMessage('Error', err.message || 'Could not load record.');
+    }
+  }
+
+  function closeForm() {
+    setFormOpen(false);
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+  }
+
+  function handleTextChange(event) {
+    const { name, value } = event.target;
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  }
+
+  function handleCheckboxChange(event) {
+    const { name, checked } = event.target;
+    setForm((prev) => ({
+      ...prev,
+      [name]: checked,
+    }));
+  }
+
+  function normalisePayload(values) {
+    const textOrNull = (value) => {
+      const v = String(value ?? '').trim();
+      return v === '' ? null : v;
     };
 
-    const { error: updateError } = await supabase
-      .from(TABLE_NAME)
-      .update(payload)
-      .eq('id', Number(editable.id));
+    const dateOrNull = (value) => {
+      const v = String(value ?? '').trim();
+      return v === '' ? null : v;
+    };
 
-    if (updateError) {
-      setError(updateError.message || 'Save failed.');
+    const intOrNull = (value) => {
+      const v = String(value ?? '').trim();
+      if (v === '') return null;
+      const parsed = Number.parseInt(v, 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    const memCode = textOrNull(values.mem_code);
+    const upperMemCode = memCode ? memCode.toUpperCase() : null;
+
+    return {
+      title: textOrNull(values.title),
+      first_name: textOrNull(values.first_name),
+      surname: textOrNull(values.surname),
+      couple_name: textOrNull(values.couple_name),
+      care_of: textOrNull(values.care_of),
+      address_1: textOrNull(values.address_1),
+      address_2: textOrNull(values.address_2),
+      address_3: textOrNull(values.address_3),
+      town_city: textOrNull(values.town_city),
+      postcode: textOrNull(values.postcode),
+      telephone: textOrNull(values.telephone),
+      email: textOrNull(values.email),
+      mem_code: upperMemCode,
+      mem_type: textOrNull(values.mem_type),
+      householder: Boolean(values.householder),
+      joined_date: dateOrNull(values.joined_date),
+      death_date: dateOrNull(values.death_date),
+      left_congregation_date: dateOrNull(values.left_congregation_date),
+      office_bearer: textOrNull(values.office_bearer),
+      ordained_date: dateOrNull(values.ordained_date),
+      admitted_date: dateOrNull(values.admitted_date),
+      active: Boolean(values.active),
+      fwo: Boolean(values.fwo),
+      fwo_no: intOrNull(values.fwo_no),
+      consent_given: Boolean(values.consent_given),
+      emergency_contact_label_1: textOrNull(values.emergency_contact_label_1),
+      emergency_contact_detail_1: textOrNull(values.emergency_contact_detail_1),
+      emergency_contact_label_2: textOrNull(values.emergency_contact_label_2),
+      emergency_contact_detail_2: textOrNull(values.emergency_contact_detail_2),
+      notes: textOrNull(values.notes),
+    };
+  }
+
+  async function handleSave(event) {
+    event.preventDefault();
+
+    const payload = normalisePayload(form);
+
+    if (!payload.first_name && !payload.surname) {
+      openMessage('Validation', 'Please enter at least a first name or surname.');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      if (editingId) {
+        const { error } = await supabase
+          .from('people')
+          .update(payload)
+          .eq('id', editingId);
+
+        if (error) throw error;
+
+        closeForm();
+        resetSearchAndResults();
+        openMessage('Saved', 'The record has been updated.');
+      } else {
+        const { error } = await supabase.from('people').insert(payload);
+
+        if (error) throw error;
+
+        closeForm();
+        resetSearchAndResults();
+        openMessage('Added', 'The new record has been added.');
+      }
+    } catch (err) {
+      openMessage('Error', err.message || 'Save failed.');
+    } finally {
       setSaving(false);
-      return;
     }
+  }
 
-    setSaving(false);
-    resetSearchState();
-  };
+  function requestDelete(row) {
+    openConfirm({
+      title: 'Delete record',
+      message: `Delete ${row.full_name || `${row.first_name || ''} ${row.surname || ''}`.trim() || 'this record'}? This cannot be undone.`,
+      confirmText: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        closeConfirm();
 
-  const saveChanges = async () => {
-    if (isAddingNew) {
-      await createRecord();
-      return;
-    }
+        try {
+          const { error } = await supabase.from('people').delete().eq('id', row.id);
+          if (error) throw error;
 
-    await updateRecord();
-  };
-
-  const deleteRecord = async () => {
-    if (!selected?.id) return;
-
-    const confirmDelete = window.confirm(
-      `Delete ${displayValue(selected.ChrName)} ${displayValue(selected.Surname)}? This cannot be undone.`
-    );
-
-    if (!confirmDelete) return;
-
-    setDeleting(true);
-    setError('');
-    setSaveMessage('');
-
-    const { error: deleteError } = await supabase
-      .from(TABLE_NAME)
-      .delete()
-      .eq('id', Number(selected.id));
-
-    if (deleteError) {
-      setError(deleteError.message || 'Delete failed.');
-      setDeleting(false);
-      return;
-    }
-
-    setDeleting(false);
-    resetSearchState();
-  };
+          resetSearchAndResults();
+          openMessage('Deleted', 'The record has been deleted.');
+        } catch (err) {
+          openMessage('Error', err.message || 'Delete failed.');
+        }
+      },
+    });
+  }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#ffffff',
-        color: '#000000',
-        padding: '24px',
-        fontFamily: 'Arial, Helvetica, sans-serif',
-      }}
-    >
-      <div style={{ maxWidth: '1180px', margin: '0 auto' }}>
-        <div style={{ fontSize: '28px', margin: '0 0 20px 0', fontWeight: 700 }}>
-          EMERGENCY CONTACTS
+    <div style={styles.page}>
+      <div style={styles.container}>
+        <div style={styles.headerRow}>
+          <div>
+            <h1 style={styles.title}>Congregational Roll</h1>
+            <p style={styles.subtitle}>Search people, edit records, and manage the main roll.</p>
+          </div>
+
+          <button style={styles.primaryButton} onClick={openCreateForm}>
+            Add person
+          </button>
         </div>
 
-        <div style={cardStyle}>
-          <div style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 700 }}>
-            Search by Christian name or surname
+        <div style={styles.searchCard}>
+          <label htmlFor="search" style={styles.label}>
+            Search by first name or surname
+          </label>
+          <input
+            id="search"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Start typing to search..."
+            style={styles.input}
+          />
+          <div style={styles.searchHint}>
+            {trimmedSearch
+              ? loading
+                ? 'Searching...'
+                : `${rows.length} result${rows.length === 1 ? '' : 's'}`
+              : 'List is empty until you type.'}
           </div>
+          {searchError ? <div style={styles.errorText}>{searchError}</div> : null}
+        </div>
 
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <input
-              value={query}
-              onChange={(e) => {
-                const value = e.target.value;
-                setQuery(value);
-                runSearch(value);
-              }}
-              placeholder="Enter Christian name or surname"
-              style={{ ...inputStyle, maxWidth: '420px' }}
-              disabled={isAddingNew}
-            />
-            <button
-              type="button"
-              onClick={startAddNew}
-              style={saving || deleting ? disabledButtonStyle : buttonStyle}
-              disabled={saving || deleting}
-            >
-              Add New
-            </button>
-          </div>
-
-          {loading && (
-            <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-              <Loader2 size={16} className="animate-spin" />
-              Searching...
-            </div>
-          )}
-
-          {error && !loading && (
-            <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-              <AlertCircle size={16} />
-              {error}
+        <div style={styles.resultsCard}>
+          {!trimmedSearch ? (
+            <div style={styles.emptyState}>Type into the search box to show matching records.</div>
+          ) : loading ? (
+            <div style={styles.emptyState}>Loading results...</div>
+          ) : rows.length === 0 ? (
+            <div style={styles.emptyState}>No matching records found.</div>
+          ) : (
+            <div style={styles.tableWrap}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Name</th>
+                    <th style={styles.th}>Code</th>
+                    <th style={styles.th}>Phone</th>
+                    <th style={styles.th}>Email</th>
+                    <th style={styles.th}>Address</th>
+                    <th style={styles.th}>Fellowship</th>
+                    <th style={styles.th}>Magazine</th>
+                    <th style={styles.th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id}>
+                      <td style={styles.td}>
+                        <div style={styles.nameCell}>
+                          <div style={styles.nameMain}>
+                            {row.full_name || [row.first_name, row.surname].filter(Boolean).join(' ') || '—'}
+                          </div>
+                          <div style={styles.nameMeta}>
+                            {row.active ? 'Active' : 'Inactive'}
+                            {row.fwo ? ` • FWO${row.fwo_no ? ` ${row.fwo_no}` : ''}` : ''}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={styles.td}>{row.mem_code || '—'}</td>
+                      <td style={styles.td}>{row.telephone || '—'}</td>
+                      <td style={styles.td}>{row.email || '—'}</td>
+                      <td style={styles.td}>
+                        {[
+                          row.address_1,
+                          row.address_2,
+                          row.address_3,
+                          row.town_city,
+                          row.postcode,
+                        ]
+                          .filter(Boolean)
+                          .join(', ') || '—'}
+                      </td>
+                      <td style={styles.td}>
+                        <div>{row.fellowship_teams || '—'}</div>
+                        {row.elder_names ? (
+                          <div style={styles.secondaryText}>Elder: {row.elder_names}</div>
+                        ) : null}
+                      </td>
+                      <td style={styles.td}>
+                        <div>{row.magazine_groups || '—'}</div>
+                        {row.deliverer_names ? (
+                          <div style={styles.secondaryText}>Deliverer: {row.deliverer_names}</div>
+                        ) : null}
+                      </td>
+                      <td style={styles.td}>
+                        <div style={styles.actionRow}>
+                          <button style={styles.secondaryButton} onClick={() => openEditForm(row)}>
+                            Edit
+                          </button>
+                          <button
+                            style={styles.dangerButton}
+                            onClick={() => requestDelete(row)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
-
-        {!isAddingNew && searchAttempted && !loading && results.length > 0 && (
-          <div style={{ ...cardStyle, marginTop: '18px' }}>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '110px 80px 1fr 1.6fr',
-                borderBottom: '1px solid #000000',
-                paddingBottom: '8px',
-                fontWeight: 700,
-                gap: '10px',
-              }}
-            >
-              <div>Select</div>
-              <div>ID</div>
-              <div>Name</div>
-              <div>Address</div>
-            </div>
-
-            <div>
-              {results.map((row, index) => {
-                const isSelected = selected?.id === row.id;
-                return (
-                  <div
-                    key={row.id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '110px 80px 1fr 1.6fr',
-                      gap: '10px',
-                      padding: '10px 0',
-                      borderBottom: index === results.length - 1 ? 'none' : '1px solid #d4d4d4',
-                      alignItems: 'start',
-                    }}
-                  >
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelected(row);
-                          setError('');
-                          setSaveMessage('');
-                        }}
-                        style={{
-                          ...buttonStyle,
-                          width: '90px',
-                          background: isSelected ? '#aa3bff' : '#ffffff',
-                          color: isSelected ? '#ffffff' : '#000000',
-                        }}
-                      >
-                        Select
-                      </button>
-                    </div>
-                    <div>{displayValue(row.id)}</div>
-                    <div>{`${displayValue(row.ChrName)} ${displayValue(row.Surname)}`.trim()}</div>
-                    <div>{addressLine(row)}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {!isAddingNew && searchAttempted && !loading && results.length === 0 && !error && (
-          <div style={{ ...cardStyle, marginTop: '18px' }}>No matching records found.</div>
-        )}
-
-        {editable && (
-          <div style={{ ...cardStyle, marginTop: '18px' }}>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '28px',
-                alignItems: 'start',
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                {!isAddingNew && <Field label="ID" value={editable.id} readOnly />}
-                <Field
-                  label="Christian Name"
-                  value={editable.ChrName}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('ChrName', value)}
-                />
-                <Field
-                  label="Surname"
-                  value={editable.Surname}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Surname', value)}
-                />
-                <Field
-                  label="Address1"
-                  value={editable.Address1}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Address1', value)}
-                />
-                <Field
-                  label="Address2"
-                  value={editable.Address2}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Address2', value)}
-                />
-                <Field
-                  label="Address3"
-                  value={editable.Address3}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Address3', value)}
-                />
-                <Field
-                  label="City"
-                  value={editable.Town}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Town', value)}
-                />
-                <Field
-                  label="Postcode"
-                  value={editable.Postcode}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Postcode', value)}
-                />
-                <Field
-                  label="Phone"
-                  value={editable['Tel No']}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Tel No', value)}
-                />
-                <Field
-                  label="Email"
-                  value={editable['Email Address']}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Email Address', value)}
-                />
-              </div>
-
-              <div style={{ minWidth: 0, textAlign: 'left' }}>
-                <SectionTitle>Emergency Contact 1</SectionTitle>
-                <Field
-                  label="Name"
-                  value={editable['Emergency Contact Info 1']}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Emergency Contact Info 1', value)}
-                />
-                <Field
-                  label="Phone"
-                  value={editable['Emergency Contact Detail 1']}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Emergency Contact Detail 1', value)}
-                />
-
-                <div style={{ height: '18px' }} />
-
-                <SectionTitle>Emergency Contact 2</SectionTitle>
-                <Field
-                  label="Name"
-                  value={editable['Emergency Contact Info 2']}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Emergency Contact Info 2', value)}
-                />
-                <Field
-                  label="Phone"
-                  value={editable['Emergency Contact Detail 2']}
-                  readOnly={!isEditing}
-                  onChange={(value) => handleFieldChange('Emergency Contact Detail 2', value)}
-                />
-              </div>
-            </div>
-
-            {saveMessage && <div style={{ marginTop: '16px', fontSize: '14px' }}>{saveMessage}</div>}
-
-            {isAddingNew && (
-              <div style={{ marginTop: '16px', fontSize: '14px' }}>
-                Enter the new contact details, then click Save.
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '10px', marginTop: '22px', flexWrap: 'wrap' }}>
-              {!isAddingNew && (
-                <button
-                  type="button"
-                  style={deleting ? disabledButtonStyle : buttonStyle}
-                  onClick={deleteRecord}
-                  disabled={deleting || saving || !selected}
-                >
-                  {deleting ? 'Deleting...' : 'Delete'}
-                </button>
-              )}
-
-              {!isEditing ? (
-                !isAddingNew && (
-                  <button
-                    type="button"
-                    style={buttonStyle}
-                    onClick={() => {
-                      setIsEditing(true);
-                      setSaveMessage('');
-                      setError('');
-                    }}
-                  >
-                    Edit
-                  </button>
-                )
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    style={saving ? disabledButtonStyle : buttonStyle}
-                    onClick={saveChanges}
-                    disabled={saving || deleting}
-                  >
-                    {saving ? 'Saving...' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    style={buttonStyle}
-                    onClick={cancelEdit}
-                    disabled={saving || deleting}
-                  >
-                    Cancel
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </div>
+
+      {formOpen ? (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalLarge}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>{titleText}</h2>
+              <button style={styles.iconButton} onClick={closeForm}>
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleSave}>
+              <div style={styles.formGrid}>
+                <Field label="Title">
+                  <input name="title" value={form.title} onChange={handleTextChange} style={styles.input} />
+                </Field>
+
+                <Field label="First name">
+                  <input
+                    name="first_name"
+                    value={form.first_name}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Surname">
+                  <input
+                    name="surname"
+                    value={form.surname}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Couple name">
+                  <input
+                    name="couple_name"
+                    value={form.couple_name}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Care of">
+                  <input
+                    name="care_of"
+                    value={form.care_of}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Address 1">
+                  <input
+                    name="address_1"
+                    value={form.address_1}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Address 2">
+                  <input
+                    name="address_2"
+                    value={form.address_2}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Address 3">
+                  <input
+                    name="address_3"
+                    value={form.address_3}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Town / City">
+                  <input
+                    name="town_city"
+                    value={form.town_city}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Postcode">
+                  <input
+                    name="postcode"
+                    value={form.postcode}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Telephone">
+                  <input
+                    name="telephone"
+                    value={form.telephone}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Email">
+                  <input
+                    name="email"
+                    value={form.email}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Membership code">
+                  <select
+                    name="mem_code"
+                    value={form.mem_code}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  >
+                    {MEM_CODE_OPTIONS.map((code) => (
+                      <option key={code || 'blank'} value={code}>
+                        {code || '—'}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Membership type">
+                  <input
+                    name="mem_type"
+                    value={form.mem_type}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Joined date">
+                  <input
+                    type="date"
+                    name="joined_date"
+                    value={form.joined_date}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Death date">
+                  <input
+                    type="date"
+                    name="death_date"
+                    value={form.death_date}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Left congregation date">
+                  <input
+                    type="date"
+                    name="left_congregation_date"
+                    value={form.left_congregation_date}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Office bearer">
+                  <input
+                    name="office_bearer"
+                    value={form.office_bearer}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Ordained date">
+                  <input
+                    type="date"
+                    name="ordained_date"
+                    value={form.ordained_date}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Admitted date">
+                  <input
+                    type="date"
+                    name="admitted_date"
+                    value={form.admitted_date}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="FWO number">
+                  <input
+                    name="fwo_no"
+                    value={form.fwo_no}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Emergency contact label 1">
+                  <input
+                    name="emergency_contact_label_1"
+                    value={form.emergency_contact_label_1}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Emergency contact detail 1">
+                  <input
+                    name="emergency_contact_detail_1"
+                    value={form.emergency_contact_detail_1}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Emergency contact label 2">
+                  <input
+                    name="emergency_contact_label_2"
+                    value={form.emergency_contact_label_2}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label="Emergency contact detail 2">
+                  <input
+                    name="emergency_contact_detail_2"
+                    value={form.emergency_contact_detail_2}
+                    onChange={handleTextChange}
+                    style={styles.input}
+                  />
+                </Field>
+              </div>
+
+              <div style={styles.checkboxGrid}>
+                <CheckboxField
+                  label="Active"
+                  name="active"
+                  checked={form.active}
+                  onChange={handleCheckboxChange}
+                />
+                <CheckboxField
+                  label="Householder"
+                  name="householder"
+                  checked={form.householder}
+                  onChange={handleCheckboxChange}
+                />
+                <CheckboxField
+                  label="FWO"
+                  name="fwo"
+                  checked={form.fwo}
+                  onChange={handleCheckboxChange}
+                />
+                <CheckboxField
+                  label="Consent given"
+                  name="consent_given"
+                  checked={form.consent_given}
+                  onChange={handleCheckboxChange}
+                />
+              </div>
+
+              <Field label="Notes" fullWidth>
+                <textarea
+                  name="notes"
+                  value={form.notes}
+                  onChange={handleTextChange}
+                  style={styles.textarea}
+                  rows={5}
+                />
+              </Field>
+
+              <div style={styles.modalActions}>
+                <button type="button" style={styles.secondaryButton} onClick={closeForm}>
+                  Cancel
+                </button>
+                <button type="submit" style={styles.primaryButton} disabled={saving}>
+                  {saving ? 'Saving...' : editingId ? 'Save changes' : 'Add person'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {messageModal.open ? (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalSmall}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>{messageModal.title}</h2>
+            </div>
+            <div style={styles.modalBody}>{messageModal.message}</div>
+            <div style={styles.modalActions}>
+              <button style={styles.primaryButton} onClick={closeMessage}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmModal.open ? (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalSmall}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>{confirmModal.title}</h2>
+            </div>
+            <div style={styles.modalBody}>{confirmModal.message}</div>
+            <div style={styles.modalActions}>
+              <button style={styles.secondaryButton} onClick={closeConfirm}>
+                Cancel
+              </button>
+              <button
+                style={confirmModal.danger ? styles.dangerButton : styles.primaryButton}
+                onClick={async () => {
+                  if (confirmModal.onConfirm) {
+                    await confirmModal.onConfirm();
+                  }
+                }}
+              >
+                {confirmModal.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function SectionTitle({ children }) {
-  return <div style={{ fontWeight: 700, marginBottom: '10px', fontSize: '16px' }}>{children}</div>;
-}
-
-function Field({ label, value, readOnly, onChange }) {
+function Field({ label, children, fullWidth = false }) {
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '150px minmax(0, 1fr)',
-        gap: '12px',
-        alignItems: 'center',
-        marginBottom: '10px',
-        width: '100%',
-      }}
-    >
-      <div style={{ fontWeight: 400, textAlign: 'left' }}>{label}</div>
-      <input
-        value={displayValue(value)}
-        readOnly={readOnly}
-        onChange={(e) => onChange?.(e.target.value)}
-        style={{
-          ...inputStyle,
-          background: readOnly ? '#ffffff' : '#f8f8f8',
-        }}
-      />
+    <div style={{ ...styles.field, ...(fullWidth ? styles.fullWidth : null) }}>
+      <label style={styles.label}>{label}</label>
+      {children}
     </div>
   );
 }
+
+function CheckboxField({ label, name, checked, onChange }) {
+  return (
+    <label style={styles.checkboxLabel}>
+      <input type="checkbox" name={name} checked={checked} onChange={onChange} />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+const styles = {
+  page: {
+    minHeight: '100vh',
+    background: '#f4f6f8',
+    padding: '24px',
+    boxSizing: 'border-box',
+    fontFamily: 'Segoe UI, Arial, sans-serif',
+    color: '#1f2937',
+  },
+  container: {
+    maxWidth: '1440px',
+    margin: '0 auto',
+  },
+  headerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    marginBottom: '24px',
+  },
+  title: {
+    margin: 0,
+    fontSize: '32px',
+    fontWeight: 700,
+  },
+  subtitle: {
+    margin: '8px 0 0 0',
+    color: '#6b7280',
+  },
+  searchCard: {
+    background: '#ffffff',
+    borderRadius: '16px',
+    padding: '20px',
+    boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
+    marginBottom: '20px',
+  },
+  resultsCard: {
+    background: '#ffffff',
+    borderRadius: '16px',
+    padding: '20px',
+    boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
+  },
+  tableWrap: {
+    overflowX: 'auto',
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+  },
+  th: {
+    textAlign: 'left',
+    padding: '12px',
+    borderBottom: '1px solid #e5e7eb',
+    fontSize: '13px',
+    color: '#6b7280',
+    whiteSpace: 'nowrap',
+  },
+  td: {
+    padding: '12px',
+    borderBottom: '1px solid #eef2f7',
+    verticalAlign: 'top',
+    fontSize: '14px',
+  },
+  nameCell: {
+    minWidth: '180px',
+  },
+  nameMain: {
+    fontWeight: 600,
+  },
+  nameMeta: {
+    marginTop: '4px',
+    fontSize: '12px',
+    color: '#6b7280',
+  },
+  secondaryText: {
+    marginTop: '4px',
+    fontSize: '12px',
+    color: '#6b7280',
+  },
+  actionRow: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  primaryButton: {
+    background: '#2563eb',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '10px 16px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  secondaryButton: {
+    background: '#ffffff',
+    color: '#1f2937',
+    border: '1px solid #d1d5db',
+    borderRadius: '10px',
+    padding: '10px 16px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  dangerButton: {
+    background: '#dc2626',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '10px 16px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  iconButton: {
+    background: 'transparent',
+    border: 'none',
+    fontSize: '28px',
+    lineHeight: 1,
+    cursor: 'pointer',
+    color: '#6b7280',
+  },
+  input: {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '10px',
+    border: '1px solid #d1d5db',
+    boxSizing: 'border-box',
+    fontSize: '14px',
+    background: '#fff',
+    outline: 'none',
+    color: '#000',
+  },
+  textarea: {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '10px',
+    border: '1px solid #d1d5db',
+    boxSizing: 'border-box',
+    fontSize: '14px',
+    resize: 'vertical',
+    fontFamily: 'inherit',
+    color: '#000',
+  },
+  label: {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: 600,
+    marginBottom: '6px',
+    color: '#374151',
+  },
+  searchHint: {
+    marginTop: '8px',
+    fontSize: '13px',
+    color: '#6b7280',
+  },
+  errorText: {
+    marginTop: '10px',
+    color: '#b91c1c',
+    fontSize: '13px',
+  },
+  emptyState: {
+    padding: '32px 12px',
+    textAlign: 'center',
+    color: '#6b7280',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(15, 23, 42, 0.42)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '20px',
+    zIndex: 1000,
+  },
+  modalLarge: {
+    width: 'min(1100px, 100%)',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    background: '#ffffff',
+    borderRadius: '18px',
+    boxShadow: '0 20px 50px rgba(15, 23, 42, 0.25)',
+    padding: '24px',
+  },
+  modalSmall: {
+    width: 'min(520px, 100%)',
+    background: '#ffffff',
+    borderRadius: '18px',
+    boxShadow: '0 20px 50px rgba(15, 23, 42, 0.25)',
+    padding: '24px',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '18px',
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: '22px',
+    fontWeight: 700,
+  },
+  modalBody: {
+    color: '#374151',
+    lineHeight: 1.5,
+  },
+  modalActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '10px',
+    marginTop: '20px',
+    flexWrap: 'wrap',
+  },
+  formGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: '14px',
+  },
+  field: {
+    minWidth: 0,
+  },
+  fullWidth: {
+    gridColumn: '1 / -1',
+    marginTop: '14px',
+  },
+  checkboxGrid: {
+    display: 'flex',
+    gap: '18px',
+    flexWrap: 'wrap',
+    marginTop: '18px',
+  },
+  checkboxLabel: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '14px',
+    color: '#374151',
+  },
+};
+
+export default App;
