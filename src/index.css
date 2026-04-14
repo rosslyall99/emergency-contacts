@@ -34,8 +34,8 @@
   :root {
     --text: #9ca3af;
     --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
+    --bg: #ffffff;
+    --border: #ffffff;
     --code-bg: #1f2028;
     --accent: #c084fc;
     --accent-bg: rgba(192, 132, 252, 0.15);
@@ -55,7 +55,7 @@ body {
 }
 
 #root {
-  width: 1126px;
+  width: 1168px;
   max-width: 100%;
   margin: 0 auto;
   text-align: center;

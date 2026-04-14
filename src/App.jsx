@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
-// Replace with your real Supabase project values.
-const SUPABASE_URL = 'https://khjghnczygqvuywgdxzy.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtoamdobmN6eWdxdnV5d2dkeHp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODU4NDgsImV4cCI6MjA5MTY2MTg0OH0.eBHc-kAMEBKZ90lvK5KhiKpx2G4k1vFJ5La8aHWB214';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error('Missing Supabase environment variables. Check your .env.local or Vercel settings.');
+}
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const TABLE_NAME = 'emergencyContacts';
@@ -25,6 +28,7 @@ const inputStyle = {
   color: '#000000',
   background: '#ffffff',
   outline: 'none',
+  boxSizing: 'border-box',
 };
 
 const buttonStyle = {
@@ -77,6 +81,42 @@ function makeEditableRecord(record) {
   };
 }
 
+function makeBlankRecord() {
+  return {
+    id: '',
+    ChrName: '',
+    Surname: '',
+    Address1: '',
+    Address2: '',
+    Address3: '',
+    Town: '',
+    Postcode: '',
+    'Tel No': '',
+    'Email Address': '',
+    'Emergency Contact Info 1': '',
+    'Emergency Contact Detail 1': '',
+    'Emergency Contact Info 2': '',
+    'Emergency Contact Detail 2': '',
+  };
+}
+
+const selectColumns = `
+  id,
+  "ChrName",
+  "Surname",
+  "Address1",
+  "Address2",
+  "Address3",
+  "Town",
+  "Postcode",
+  "Tel No",
+  "Email Address",
+  "Emergency Contact Info 1",
+  "Emergency Contact Detail 1",
+  "Emergency Contact Info 2",
+  "Emergency Contact Detail 2"
+`;
+
 export default function EmergencyContactsPage() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,23 +125,34 @@ export default function EmergencyContactsPage() {
   const [selected, setSelected] = useState(null);
   const [editable, setEditable] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isAddingNew, setIsAddingNew] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
-  const [saving, setSaving] = useState(false);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
 
   useEffect(() => {
+    if (isAddingNew) {
+      setEditable(makeBlankRecord());
+      setIsEditing(true);
+      return;
+    }
+
     if (!selected) {
       setEditable(null);
       setIsEditing(false);
       return;
     }
+
     setEditable(makeEditableRecord(selected));
     setIsEditing(false);
-  }, [selected]);
+  }, [selected, isAddingNew]);
 
   const runSearch = async () => {
+    if (isAddingNew) return;
+
     if (trimmedQuery.length < 2) {
       setSearchAttempted(true);
       setResults([]);
@@ -115,28 +166,12 @@ export default function EmergencyContactsPage() {
     setSelected(null);
     setEditable(null);
     setIsEditing(false);
+    setSaveMessage('');
     setError('');
 
     const { data, error: searchError } = await supabase
       .from(TABLE_NAME)
-      .select(
-        `
-          id,
-          "ChrName",
-          "Surname",
-          "Address1",
-          "Address2",
-          "Address3",
-          "Town",
-          "Postcode",
-          "Tel No",
-          "Email Address",
-          "Emergency Contact Info 1",
-          "Emergency Contact Detail 1",
-          "Emergency Contact Info 2",
-          "Emergency Contact Detail 2"
-        `
-      )
+      .select(selectColumns)
       .or(`"ChrName".ilike.%${trimmedQuery}%,"Surname".ilike.%${trimmedQuery}%`)
       .order('Surname', { ascending: true })
       .order('ChrName', { ascending: true })
@@ -157,13 +192,32 @@ export default function EmergencyContactsPage() {
     setEditable((current) => ({ ...current, [field]: value }));
   };
 
+  const startAddNew = () => {
+    setIsAddingNew(true);
+    setSelected(null);
+    setEditable(makeBlankRecord());
+    setIsEditing(true);
+    setSaveMessage('');
+    setError('');
+  };
+
   const cancelEdit = () => {
+    if (isAddingNew) {
+      setIsAddingNew(false);
+      setEditable(null);
+      setIsEditing(false);
+      setSaveMessage('');
+      setError('');
+      return;
+    }
+
     setEditable(makeEditableRecord(selected));
     setIsEditing(false);
     setSaveMessage('');
+    setError('');
   };
 
-  const saveChanges = async () => {
+  const createRecord = async () => {
     if (!editable) return;
 
     setSaving(true);
@@ -171,13 +225,59 @@ export default function EmergencyContactsPage() {
     setSaveMessage('');
 
     const payload = {
-      'ChrName': editable.ChrName,
-      'Surname': editable.Surname,
-      'Address1': editable.Address1,
-      'Address2': editable.Address2,
-      'Address3': editable.Address3,
-      'Town': editable.Town,
-      'Postcode': editable.Postcode,
+      ChrName: editable.ChrName,
+      Surname: editable.Surname,
+      Address1: editable.Address1,
+      Address2: editable.Address2,
+      Address3: editable.Address3,
+      Town: editable.Town,
+      Postcode: editable.Postcode,
+      'Tel No': editable['Tel No'],
+      'Email Address': editable['Email Address'],
+      'Emergency Contact Info 1': editable['Emergency Contact Info 1'],
+      'Emergency Contact Detail 1': editable['Emergency Contact Detail 1'],
+      'Emergency Contact Info 2': editable['Emergency Contact Info 2'],
+      'Emergency Contact Detail 2': editable['Emergency Contact Detail 2'],
+    };
+
+    const { data, error: insertError } = await supabase
+      .from(TABLE_NAME)
+      .insert(payload)
+      .select(selectColumns)
+      .single();
+
+    if (insertError) {
+      setError(insertError.message || 'Create failed.');
+      setSaving(false);
+      return;
+    }
+
+    const newRow = data;
+    setResults((current) => [newRow, ...current]);
+    setSelected(null);
+    setEditable(null);
+    setIsAddingNew(false);
+    setIsEditing(false);
+    alert('Record created successfully.');
+    setSaveMessage('Record created successfully.');
+    setSaving(false);
+  };
+
+  const updateRecord = async () => {
+    if (!editable) return;
+
+    setSaving(true);
+    setError('');
+    setSaveMessage('');
+
+    const payload = {
+      ChrName: editable.ChrName,
+      Surname: editable.Surname,
+      Address1: editable.Address1,
+      Address2: editable.Address2,
+      Address3: editable.Address3,
+      Town: editable.Town,
+      Postcode: editable.Postcode,
       'Tel No': editable['Tel No'],
       'Email Address': editable['Email Address'],
       'Emergency Contact Info 1': editable['Emergency Contact Info 1'],
@@ -213,24 +313,95 @@ export default function EmergencyContactsPage() {
     setSaving(false);
   };
 
+  const saveChanges = async () => {
+    if (isAddingNew) {
+      await createRecord();
+      return;
+    }
+
+    await updateRecord();
+  };
+
+  const deleteRecord = async () => {
+    if (!selected?.id) return;
+
+    const confirmDelete = window.confirm(
+      `Delete ${displayValue(selected.ChrName)} ${displayValue(selected.Surname)}? This cannot be undone.`
+    );
+
+    if (!confirmDelete) return;
+
+    setDeleting(true);
+    setError('');
+    setSaveMessage('');
+
+    const { error: deleteError } = await supabase
+      .from(TABLE_NAME)
+      .delete()
+      .eq('id', Number(selected.id));
+
+    if (deleteError) {
+      setError(deleteError.message || 'Delete failed.');
+      setDeleting(false);
+      return;
+    }
+
+    setResults((current) => current.filter((row) => Number(row.id) !== Number(selected.id)));
+    setSelected(null);
+    setEditable(null);
+    setIsEditing(false);
+    setIsAddingNew(false);
+    setSaveMessage('Record deleted successfully.');
+    setDeleting(false);
+  };
+
   return (
-    <div style={{ minHeight: '100vh', background: '#ffffff', color: '#000000', padding: '24px', fontFamily: 'Arial, Helvetica, sans-serif' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#ffffff',
+        color: '#000000',
+        padding: '24px',
+        fontFamily: 'Arial, Helvetica, sans-serif',
+      }}
+    >
       <div style={{ maxWidth: '1180px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '28px', margin: '0 0 20px 0', fontWeight: 700 }}>EMERGENCY CONTACTS</h1>
+        <h1 style={{ fontSize: '28px', margin: '0 0 20px 0', fontWeight: 700 }}>
+          EMERGENCY CONTACTS
+        </h1>
 
         <div style={cardStyle}>
-          <div style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 700 }}>Search by Christian name or surname</div>
+          <div style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 700 }}>
+            Search by Christian name or surname
+          </div>
+
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Enter Christian name or surname"
               style={{ ...inputStyle, maxWidth: '420px' }}
+              disabled={isAddingNew}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') runSearch();
+                if (e.key === 'Enter' && !isAddingNew) runSearch();
               }}
             />
-            <button type="button" onClick={runSearch} style={buttonStyle}>Search</button>
+            <button
+              type="button"
+              onClick={runSearch}
+              style={isAddingNew ? disabledButtonStyle : buttonStyle}
+              disabled={isAddingNew}
+            >
+              Search
+            </button>
+            <button
+              type="button"
+              onClick={startAddNew}
+              style={saving || deleting ? disabledButtonStyle : buttonStyle}
+              disabled={saving || deleting}
+            >
+              Add New
+            </button>
           </div>
 
           {loading && (
@@ -248,9 +419,18 @@ export default function EmergencyContactsPage() {
           )}
         </div>
 
-        {searchAttempted && !loading && results.length > 0 && (
+        {!isAddingNew && searchAttempted && !loading && results.length > 0 && (
           <div style={{ ...cardStyle, marginTop: '18px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '110px 80px 1fr 1.6fr', borderBottom: '1px solid #000000', paddingBottom: '8px', fontWeight: 700, gap: '10px' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '110px 80px 1fr 1.6fr',
+                borderBottom: '1px solid #000000',
+                paddingBottom: '8px',
+                fontWeight: 700,
+                gap: '10px',
+              }}
+            >
               <div>Select</div>
               <div>ID</div>
               <div>Name</div>
@@ -278,6 +458,7 @@ export default function EmergencyContactsPage() {
                         onClick={() => {
                           setSelected(row);
                           setError('');
+                          setSaveMessage('');
                         }}
                         style={{
                           ...buttonStyle,
@@ -299,63 +480,163 @@ export default function EmergencyContactsPage() {
           </div>
         )}
 
-        {searchAttempted && !loading && results.length === 0 && !error && (
-          <div style={{ ...cardStyle, marginTop: '18px' }}>
-            No matching records found.
-          </div>
+        {!isAddingNew && searchAttempted && !loading && results.length === 0 && !error && (
+          <div style={{ ...cardStyle, marginTop: '18px' }}>No matching records found.</div>
         )}
 
-        {selected && editable && (
+        {editable && (
           <div style={{ ...cardStyle, marginTop: '18px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '28px', alignItems: 'start' }}>
-              <div>
-                <Field label="ID" value={editable.id} readOnly />
-                <Field label="Christian Name" value={editable.ChrName} readOnly={!isEditing} onChange={(value) => handleFieldChange('ChrName', value)} />
-                <Field label="Surname" value={editable.Surname} readOnly={!isEditing} onChange={(value) => handleFieldChange('Surname', value)} />
-                <Field label="Address1" value={editable.Address1} readOnly={!isEditing} onChange={(value) => handleFieldChange('Address1', value)} />
-                <Field label="Address2" value={editable.Address2} readOnly={!isEditing} onChange={(value) => handleFieldChange('Address2', value)} />
-                <Field label="Address3" value={editable.Address3} readOnly={!isEditing} onChange={(value) => handleFieldChange('Address3', value)} />
-                <Field label="City" value={editable.Town} readOnly={!isEditing} onChange={(value) => handleFieldChange('Town', value)} />
-                <Field label="Postcode" value={editable.Postcode} readOnly={!isEditing} onChange={(value) => handleFieldChange('Postcode', value)} />
-                <Field label="Phone" value={editable['Tel No']} readOnly={!isEditing} onChange={(value) => handleFieldChange('Tel No', value)} />
-                <Field label="Email" value={editable['Email Address']} readOnly={!isEditing} onChange={(value) => handleFieldChange('Email Address', value)} />
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '28px',
+                alignItems: 'start',
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                {!isAddingNew && <Field label="ID" value={editable.id} readOnly />}
+                <Field
+                  label="Christian Name"
+                  value={editable.ChrName}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('ChrName', value)}
+                />
+                <Field
+                  label="Surname"
+                  value={editable.Surname}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Surname', value)}
+                />
+                <Field
+                  label="Address1"
+                  value={editable.Address1}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Address1', value)}
+                />
+                <Field
+                  label="Address2"
+                  value={editable.Address2}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Address2', value)}
+                />
+                <Field
+                  label="Address3"
+                  value={editable.Address3}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Address3', value)}
+                />
+                <Field
+                  label="City"
+                  value={editable.Town}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Town', value)}
+                />
+                <Field
+                  label="Postcode"
+                  value={editable.Postcode}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Postcode', value)}
+                />
+                <Field
+                  label="Phone"
+                  value={editable['Tel No']}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Tel No', value)}
+                />
+                <Field
+                  label="Email"
+                  value={editable['Email Address']}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Email Address', value)}
+                />
               </div>
 
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <SectionTitle>Emergency Contact 1</SectionTitle>
-                <Field label="Name" value={editable['Emergency Contact Info 1']} readOnly={!isEditing} onChange={(value) => handleFieldChange('Emergency Contact Info 1', value)} />
-                <Field label="Phone" value={editable['Emergency Contact Detail 1']} readOnly={!isEditing} onChange={(value) => handleFieldChange('Emergency Contact Detail 1', value)} />
+                <Field
+                  label="Name"
+                  value={editable['Emergency Contact Info 1']}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Emergency Contact Info 1', value)}
+                />
+                <Field
+                  label="Phone"
+                  value={editable['Emergency Contact Detail 1']}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Emergency Contact Detail 1', value)}
+                />
 
                 <div style={{ height: '18px' }} />
 
                 <SectionTitle>Emergency Contact 2</SectionTitle>
-                <Field label="Name" value={editable['Emergency Contact Info 2']} readOnly={!isEditing} onChange={(value) => handleFieldChange('Emergency Contact Info 2', value)} />
-                <Field label="Phone" value={editable['Emergency Contact Detail 2']} readOnly={!isEditing} onChange={(value) => handleFieldChange('Emergency Contact Detail 2', value)} />
+                <Field
+                  label="Name"
+                  value={editable['Emergency Contact Info 2']}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Emergency Contact Info 2', value)}
+                />
+                <Field
+                  label="Phone"
+                  value={editable['Emergency Contact Detail 2']}
+                  readOnly={!isEditing}
+                  onChange={(value) => handleFieldChange('Emergency Contact Detail 2', value)}
+                />
               </div>
             </div>
 
-            {saveMessage && (
-              <div style={{ marginTop: '16px', fontSize: '14px' }}>{saveMessage}</div>
+            {saveMessage && <div style={{ marginTop: '16px', fontSize: '14px' }}>{saveMessage}</div>}
+
+            {isAddingNew && (
+              <div style={{ marginTop: '16px', fontSize: '14px' }}>
+                Enter the new contact details, then click Save.
+              </div>
             )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '22px', flexWrap: 'wrap' }}>
-              <button type="button" style={disabledButtonStyle} disabled>Delete</button>
+              {!isAddingNew && (
+                <button
+                  type="button"
+                  style={deleting ? disabledButtonStyle : buttonStyle}
+                  onClick={deleteRecord}
+                  disabled={deleting || saving || !selected}
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              )}
+
               {!isEditing ? (
-                <button type="button" style={buttonStyle} onClick={() => {
-                  setIsEditing(true);
-                  setSaveMessage('');
-                }}>Edit</button>
+                !isAddingNew && (
+                  <button
+                    type="button"
+                    style={buttonStyle}
+                    onClick={() => {
+                      setIsEditing(true);
+                      setSaveMessage('');
+                      setError('');
+                    }}
+                  >
+                    Edit
+                  </button>
+                )
               ) : (
                 <>
                   <button
                     type="button"
                     style={saving ? disabledButtonStyle : buttonStyle}
                     onClick={saveChanges}
-                    disabled={saving}
+                    disabled={saving || deleting}
                   >
                     {saving ? 'Saving...' : 'Save'}
                   </button>
-                  <button type="button" style={buttonStyle} onClick={cancelEdit} disabled={saving}>Cancel</button>
+                  <button
+                    type="button"
+                    style={buttonStyle}
+                    onClick={cancelEdit}
+                    disabled={saving || deleting}
+                  >
+                    Cancel
+                  </button>
                 </>
               )}
             </div>
@@ -372,8 +653,17 @@ function SectionTitle({ children }) {
 
 function Field({ label, value, readOnly, onChange }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '12px', alignItems: 'center', marginBottom: '10px' }}>
-      <div style={{ fontWeight: 400 }}>{label}</div>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '150px minmax(0, 1fr)',
+        gap: '12px',
+        alignItems: 'center',
+        marginBottom: '10px',
+        width: '100%',
+      }}
+    >
+      <div style={{ fontWeight: 400, textAlign: 'left' }}>{label}</div>
       <input
         value={displayValue(value)}
         readOnly={readOnly}
