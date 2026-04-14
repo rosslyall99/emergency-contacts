@@ -13,9 +13,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const TABLE_NAME = 'emergencyContacts';
 
 const cardStyle = {
-  background: '#ffffff',
+  background: '#aa3bff2c',
   border: '1px solid #000000',
-  borderRadius: '0',
+  borderRadius: '8px',
   padding: '16px',
 };
 
@@ -23,7 +23,7 @@ const inputStyle = {
   width: '100%',
   padding: '10px 12px',
   border: '1px solid #000000',
-  borderRadius: '0',
+  borderRadius: '8px',
   fontSize: '14px',
   color: '#000000',
   background: '#ffffff',
@@ -34,9 +34,9 @@ const inputStyle = {
 const buttonStyle = {
   padding: '8px 14px',
   border: '1px solid #000000',
-  borderRadius: '0',
-  background: '#ffffff',
-  color: '#000000',
+  borderRadius: '8px',
+  background: '#aa3bff',
+  color: '#fff',
   fontSize: '14px',
   cursor: 'pointer',
 };
@@ -366,9 +366,9 @@ export default function EmergencyContactsPage() {
       }}
     >
       <div style={{ maxWidth: '1180px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '28px', margin: '0 0 20px 0', fontWeight: 700 }}>
+        <div style={{ fontSize: '28px', margin: '0 0 20px 0', fontWeight: 700 }}>
           EMERGENCY CONTACTS
-        </h1>
+        </div>
 
         <div style={cardStyle}>
           <div style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 700 }}>
@@ -463,7 +463,7 @@ export default function EmergencyContactsPage() {
                         style={{
                           ...buttonStyle,
                           width: '90px',
-                          background: isSelected ? '#000000' : '#ffffff',
+                          background: isSelected ? '#aa3bff' : '#ffffff',
                           color: isSelected ? '#ffffff' : '#000000',
                         }}
                       >
@@ -552,7 +552,7 @@ export default function EmergencyContactsPage() {
                 />
               </div>
 
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, textAlign: 'left' }}>
                 <SectionTitle>Emergency Contact 1</SectionTitle>
                 <Field
                   label="Name"
