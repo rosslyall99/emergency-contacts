@@ -150,14 +150,33 @@ export default function EmergencyContactsPage() {
     setIsEditing(false);
   }, [selected, isAddingNew]);
 
-  const runSearch = async () => {
+  const resetSearchState = () => {
+    setQuery('');
+    setSearchAttempted(false);
+    setResults([]);
+    setSelected(null);
+    setEditable(null);
+    setIsEditing(false);
+    setIsAddingNew(false);
+    setError('');
+    setSaveMessage('');
+    setLoading(false);
+  };
+
+  const runSearch = async (searchText) => {
     if (isAddingNew) return;
 
-    if (trimmedQuery.length < 2) {
-      setSearchAttempted(true);
+    const value = (searchText ?? '').trim();
+
+    if (value.length === 0) {
+      setSearchAttempted(false);
       setResults([]);
       setSelected(null);
-      setError('Please enter at least 2 letters.');
+      setEditable(null);
+      setIsEditing(false);
+      setError('');
+      setSaveMessage('');
+      setLoading(false);
       return;
     }
 
@@ -172,7 +191,7 @@ export default function EmergencyContactsPage() {
     const { data, error: searchError } = await supabase
       .from(TABLE_NAME)
       .select(selectColumns)
-      .or(`"ChrName".ilike.%${trimmedQuery}%,"Surname".ilike.%${trimmedQuery}%`)
+      .or(`"ChrName".ilike.%${value}%,"Surname".ilike.%${value}%`)
       .order('Surname', { ascending: true })
       .order('ChrName', { ascending: true })
       .limit(50);
@@ -203,11 +222,7 @@ export default function EmergencyContactsPage() {
 
   const cancelEdit = () => {
     if (isAddingNew) {
-      setIsAddingNew(false);
-      setEditable(null);
-      setIsEditing(false);
-      setSaveMessage('');
-      setError('');
+      resetSearchState();
       return;
     }
 
@@ -240,11 +255,9 @@ export default function EmergencyContactsPage() {
       'Emergency Contact Detail 2': editable['Emergency Contact Detail 2'],
     };
 
-    const { data, error: insertError } = await supabase
+    const { error: insertError } = await supabase
       .from(TABLE_NAME)
-      .insert(payload)
-      .select(selectColumns)
-      .single();
+      .insert(payload);
 
     if (insertError) {
       setError(insertError.message || 'Create failed.');
@@ -252,15 +265,9 @@ export default function EmergencyContactsPage() {
       return;
     }
 
-    const newRow = data;
-    setResults((current) => [newRow, ...current]);
-    setSelected(null);
-    setEditable(null);
-    setIsAddingNew(false);
-    setIsEditing(false);
     alert('Record created successfully.');
-    setSaveMessage('Record created successfully.');
     setSaving(false);
+    resetSearchState();
   };
 
   const updateRecord = async () => {
@@ -297,20 +304,8 @@ export default function EmergencyContactsPage() {
       return;
     }
 
-    const updatedRow = {
-      ...selected,
-      ...payload,
-      id: Number(editable.id),
-    };
-
-    setSelected(updatedRow);
-    setEditable(makeEditableRecord(updatedRow));
-    setResults((current) =>
-      current.map((row) => (Number(row.id) === Number(updatedRow.id) ? updatedRow : row))
-    );
-    setIsEditing(false);
-    setSaveMessage('Record saved successfully.');
     setSaving(false);
+    resetSearchState();
   };
 
   const saveChanges = async () => {
@@ -346,13 +341,8 @@ export default function EmergencyContactsPage() {
       return;
     }
 
-    setResults((current) => current.filter((row) => Number(row.id) !== Number(selected.id)));
-    setSelected(null);
-    setEditable(null);
-    setIsEditing(false);
-    setIsAddingNew(false);
-    setSaveMessage('Record deleted successfully.');
     setDeleting(false);
+    resetSearchState();
   };
 
   return (
@@ -378,22 +368,15 @@ export default function EmergencyContactsPage() {
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setQuery(value);
+                runSearch(value);
+              }}
               placeholder="Enter Christian name or surname"
               style={{ ...inputStyle, maxWidth: '420px' }}
               disabled={isAddingNew}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isAddingNew) runSearch();
-              }}
             />
-            <button
-              type="button"
-              onClick={runSearch}
-              style={isAddingNew ? disabledButtonStyle : buttonStyle}
-              disabled={isAddingNew}
-            >
-              Search
-            </button>
             <button
               type="button"
               onClick={startAddNew}
